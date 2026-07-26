@@ -1,0 +1,260 @@
+// AI Agency - Database Schema
+// Run `npm run prisma:generate` after any change to this file.
+// Run `npm run prisma:migrate` to create/apply a migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ToneType {
+  PROFESSIONAL
+  CASUAL
+  FRIENDLY
+  FORMAL
+  PLAYFUL
+  LUXURY
+  URGENT
+  EMOTIONAL
+}
+
+enum GenerationStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// ============================================================
+// USERS & AUTH
+// ============================================================
+
+model User {
+  id                String    @id @default(uuid())
+  name              String
+  email             String    @unique
+  password          String
+  role              Role      @default(USER)
+  avatarUrl         String?
+  isEmailVerified   Boolean   @default(false)
+  isActive          Boolean   @default(true)
+
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+
+  refreshToken      String?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  businessProfiles  BusinessProfile[]
+  generations       Generation[]
+  history           History[]
+  favorites         Favorite[]
+  settings          Settings?
+  activityLogs      ActivityLog[]
+
+  @@map("users")
+}
+
+// ============================================================
+// BUSINESS PROFILE
+// ============================================================
+
+model BusinessProfile {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  businessName  String
+  businessType  String?
+  website       String?
+  phone         String?
+  location      String?
+  audience      String?
+  brandTone     ToneType? @default(PROFESSIONAL)
+  products      String[]  @default([])
+  services      String[]  @default([])
+  socialLinks   Json?     // { instagram, facebook, linkedin, twitter, youtube }
+  logoUrl       String?
+  description   String?
+
+  isDefault     Boolean   @default(true)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  generations   Generation[]
+
+  @@index([userId])
+  @@map("business_profiles")
+}
+
+// ============================================================
+// CATEGORIES & TEMPLATES
+// ============================================================
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  slug        String     @unique
+  description String?
+  icon        String?
+  order       Int        @default(0)
+
+  templates   Template[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("categories")
+}
+
+model Template {
+  id           String    @id @default(uuid())
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  name         String
+  slug         String    @unique
+  businessType String    // e.g. Restaurant, Gym, Hospital, Astrologer...
+  description  String?
+  promptHints  Json?     // structured defaults used to seed the generator form
+  isActive     Boolean   @default(true)
+
+  generations  Generation[]
+
+  createdAt    DateTime  @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([businessType])
+  @@map("templates")
+}
+
+// ============================================================
+// GENERATIONS (core AI output records)
+// ============================================================
+
+model Generation {
+  id                String            @id @default(uuid())
+  userId            String
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  businessProfileId String?
+  businessProfile   BusinessProfile?  @relation(fields: [businessProfileId], references: [id], onDelete: SetNull)
+
+  templateId        String?
+  template          Template?         @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  contentType       String            // e.g. "instagram", "blog", "seo_meta_title"
+  topic             String?
+  goal              String?
+  targetAudience    String?
+  tone              ToneType?
+  length            String?           // short | medium | long
+  language          String            @default("English")
+  offer             String?
+  keywords          String[]          @default([])
+  callToAction       String?
+
+  inputPayload      Json              // full raw input sent to the AI
+  outputContent     String            @db.Text
+  hashtags          String[]          @default([])
+  seoSuggestions    Json?
+
+  aiProvider        String?
+  aiModel           String?
+  tokensUsed        Int?
+  generationTimeMs  Int?
+  status            GenerationStatus  @default(SUCCESS)
+  errorMessage      String?
+
+  createdAt         DateTime          @default(now())
+
+  history           History[]
+  favorites         Favorite[]
+
+  @@index([userId])
+  @@index([contentType])
+  @@map("generations")
+}
+
+// ============================================================
+// HISTORY, FAVORITES, SETTINGS, ACTIVITY LOGS
+// ============================================================
+
+model History {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  generationId  String
+  generation    Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  isDeleted     Boolean    @default(false)
+
+  createdAt     DateTime   @default(now())
+
+  @@index([userId])
+  @@map("history")
+}
+
+model Favorite {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  generationId  String
+  generation    Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime   @default(now())
+
+  @@unique([userId, generationId])
+  @@map("favorites")
+}
+
+model Settings {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  theme             String   @default("system") // light | dark | system
+  language          String   @default("English")
+  emailNotifications Boolean @default(true)
+  defaultTone       ToneType? @default(PROFESSIONAL)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action      String   // e.g. "LOGIN", "GENERATE_CONTENT", "UPDATE_PROFILE"
+  description String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@map("activity_logs")
+}
