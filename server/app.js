@@ -23,6 +23,9 @@ const app = express();
 app.use(helmet());
 
 // --- CORS ---
+console.log("CLIENT_URL =", env.clientUrl);
+
+
 app.use(
   cors({
     origin: env.clientUrl,
